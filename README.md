@@ -1,6 +1,6 @@
 # 拾知 Study｜護理個人學習網站
 
-目前程式版本 v1.1.0。導覽中的 ChatGPT 工作區下方為「監視器」，再下方為「版本紀錄」。PDF 上傳已修正 PDF.js 新版資源清理 API 相容性問題。
+目前程式版本 v1.1.1。修正 Supabase 統計網址在 Cloudflare 建置時的讀取方式，並改善保存、同步與統計連線失敗提示。導覽中的 ChatGPT 工作區下方為「監視器」，再下方為「版本紀錄」。
 
 以老師授課範圍為核心的私人學習網站。使用 Next.js App Router、React、JavaScript、Tailwind CSS、Supabase；先在自己的 ChatGPT 整理教材，再匯入筆記、單字卡與單選題。
 
@@ -132,6 +132,16 @@ Workers Builds 的 Build command 為 `npm run build:cloudflare`，Deploy command
 PDF 直接上傳私人 Supabase Storage，Finalize API 只收教材代號並下載驗證，無 service_role 金鑰；仍須驗收 Workers CPU／記憶體限制，不能保證所有 20 MB PDF 都能在免費額度內完成驗證。
 
 Cloudflare／Supabase 的方案限制、郵件與額度需另行確認，不自動升級付費方案。本機建置通過不代表已正式上線。
+
+## 連線錯誤排查
+
+`TypeError: Failed to fetch` 表示請求未取得可用回應，單靠訊息無法判定是網路、DNS、瀏覽器阻擋或服務故障。
+
+1. 保存時遇到連線錯誤，先保留輸入內容；重新同步確認是否已有該筆資料，再決定是否重試。若提示「操作已保存，但重新讀取失敗」，不要再次保存同一筆。
+2. 使用 F12 → Network 檢查失敗請求：`<專案>.supabase.co/rest/v1/scopes` 是範圍寫入；`/api/usage` 是網站的統計 API。不要分享 Authorization、apikey、Cookie 或完整 HAR。
+3. 改用手機行動網路或無痕視窗比較，並檢查 VPN、擴充功能與 Supabase 專案狀態。可提供失敗請求的網域、路徑、HTTP 狀態或瀏覽器錯誤碼，協助定位。
+4. 若統計 API 已回應「尚未指定監測管理者」或「尚未設定唯讀 Token」，依 `USAGE-MONITOR.md` 設定伺服器秘密；這些設定與範圍保存不同。管理 Token 不可加入 `NEXT_PUBLIC_`。
+5. 若公開 Supabase URL 設錯，本機修改 `.env.local` 後重啟；Cloudflare 修改 Build variables 後重新建置部署，單改 runtime 變數不會更新瀏覽器中的網址。
 
 ## 官方參考
 

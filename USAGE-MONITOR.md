@@ -40,6 +40,8 @@ Supabase 帳號的 Access Tokens 頁建立 fine-grained token（如果後台提�
 
 ## 4. 部署及驗收
 
+Supabase 專案網址使用 **Build variables** 的 `NEXT_PUBLIC_SUPABASE_URL`，與登入共用同一個建置值。公開網址在程式中必須直接讀取 `process.env.NEXT_PUBLIC_SUPABASE_URL`；透過 `env[...]` 或 `process.env` 的別名讀取不會被建置工具嵌入，可能導致登入正常但統計出現「Supabase 專案網址格式不符合預期」。更新程式後須重新建置部署；管理 Token 仍留在 runtime Secrets，不需重建資料庫。
+
 提交並推送此版本以觸發 Cloudflare 建置；上述 Secrets 放在執行時，不填 Build variables，不加 `NEXT_PUBLIC_` 前綴。`cloudflare.config.ts` 只宣告 Secret 名稱，沒有憑證值。Cloudflare nodejs_compat 讓 runtime Secrets 可由伺服器 process.env 讀取。
 
 登入指定帳號 → 雲端用量監測 → 更新用量。確認兩個服務的連線狀態、數字與時間，再對照官方後台。用第二個帳號測試 `/api/usage` 應回 403，未登入應回 401。未指定管理者時拒絕查詢。

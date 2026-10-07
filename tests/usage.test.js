@@ -1,10 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createMonitorHandler,readCloudflare,readSupabase} from '../lib/usage-server.js';
+import {createMonitorHandler,monitorConfig,readCloudflare,readSupabase} from '../lib/usage-server.js';
 import {usageLevel,materialUsage} from '../lib/usage.js';
 const config={admin:'owner',account:'account',cfToken:'private-cf',sbToken:'private-sb',project:'abcdefghijklmnopqrst'};
 const now=new Date('2026-10-07T23:59:00Z');
 const request=(token='owner')=>new Request('https://study.example/api/usage',{headers:token?{Authorization:`Bearer ${token}`}:{}});
+test('monitor configuration distinguishes missing and invalid URLs without crashing the route',async()=>{
+ const valid=monitorConfig({NEXT_PUBLIC_SUPABASE_URL:'https://abcdefghijklmnopqrst.supabase.co',MONITOR_SUPABASE_TOKEN:'test-token'});
+ assert.equal(valid.project,'abcdefghijklmnopqrst');assert.equal(valid.projectError,'');
+ for(const url of [undefined,'not-a-url','https://invalid.local','http://abcdefghijklmnopqrst.supabase.co']){
+  const result=monitorConfig({NEXT_PUBLIC_SUPABASE_URL:url,MONITOR_SUPABASE_TOKEN:'test-token'});
+  assert.equal(result.project,'');assert.match(result.projectError,/Build variables/);
+  const report=await readSupabase(result,()=>{throw new Error('Must not query an invalid project');});
+  assert.equal(report.status,'error');assert.equal(report.message,result.projectError);
+ }
+});
+test('server authentication network failures are service failures rather than expired sessions',async()=>{
+ const handler=createMonitorHandler({getConfig:()=>config,authenticate:async()=>{throw new TypeError('fetch failed');}});
+ const response=await handler(request());assert.equal(response.status,503);
+ assert.match((await response.json()).error,/伺服器無法連線/);
+ const failed=await readSupabase(config,async()=>{throw new TypeError('fetch failed');},now);
+ assert.equal(failed.status,'error');assert.match(failed.message,/查詢失敗/);
+ assert.match(failed.metrics.database.message,/Supabase 統計服務/);
+});
 test('usage endpoint rejects unauthenticated and non-owner before any management request',async()=>{
  let calls=0;const handler=createMonitorHandler({getConfig:()=>config,authenticate:async t=>t==='Bearer invalid'?null:{id:t.slice(7)},fetcher:async()=>{calls++;throw Error('Must not fetch');}});
  assert.equal((await handler(request(null))).status,401);assert.equal((await handler(request('invalid'))).status,401);assert.equal((await handler(request('other'))).status,403);assert.equal(calls,0);

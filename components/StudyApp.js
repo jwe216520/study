@@ -11,6 +11,7 @@ import { MaterialsPanel, NotesPanel, ImportPanel } from './WorkspacePanels';
 import { CardsPanel, QuizPanel } from './PracticePanels';
 import UsagePanel from './UsagePanel';
 import VersionPanel from './VersionPanel';
+import { connectionMessage, saveErrorMessage } from '@/lib/connection-errors';
 const PdfViewer = dynamic(() => import('./PdfViewer'), { ssr: false });
 const nav = [{ id:'overview',label:'學習總覽',icon:LayoutDashboard },{id:'materials',label:'教材與範圍',icon:Files},{id:'notes',label:'概念筆記',icon:NotebookPen},{id:'cards',label:'單字卡',icon:Layers},{id:'quiz',label:'小考與複習',icon:ClipboardCheck},{id:'import',label:'ChatGPT 工作區',icon:Sparkles},{id:'usage',label:'監視器',icon:Activity},{id:'versions',label:'版本紀錄',icon:History}];
 const blank = {subjects:[],chapters:[],materials:[],scopes:[],content_items:[],card_progress:[],quiz_attempts:[]};
@@ -40,12 +41,12 @@ export default function StudyApp() {
  useEffect(()=>{
   if(!session)return;
   let alive=true;setLoading(true);
-  loadWorkspace().then(v=>{if(alive)setData(v);}).catch(e=>{if(alive)notify(`讀取資料失敗：${e.message}`,true);}).finally(()=>{if(alive)setLoading(false);});
+  loadWorkspace().then(v=>{if(alive)setData(v);}).catch(e=>{if(alive)notify(`讀取資料失敗：${connectionMessage(e)}`,true);}).finally(()=>{if(alive)setLoading(false);});
   return ()=>{alive=false;};
  },[session,notify]);
  useEffect(()=>{
   if(!session||busy)return;
-  const sync=()=>{if(document.visibilityState==='visible')refresh().catch(e=>notify(`同步失敗：${e.message}`,true));};
+  const sync=()=>{if(document.visibilityState==='visible'&&!document.querySelector('[role="dialog"]'))refresh().catch(e=>notify(`同步失敗：${connectionMessage(e)}`,true));};
   window.addEventListener('focus',sync);const timer=setInterval(sync,60000);
   return ()=>{window.removeEventListener('focus',sync);clearInterval(timer);};
  },[session,busy,refresh,notify]);
@@ -53,8 +54,8 @@ export default function StudyApp() {
  async function action(fn,message='已保存') {
   if(preview){notify('目前是唯讀介面預覽。完成 Supabase 設定並登入後即可保存。',true);return undefined;}
   setBusy(true);
-  try {const result=await fn();notify(message);try{await refresh();}catch(e){notify(`操作已保存，但重新讀取失敗：${e.message}。請重新整理。`,true);}return {result};}
-  catch(e){notify(e.message,true);return undefined;}finally{setBusy(false);}
+  try {const result=await fn();notify(message);try{await refresh();}catch(e){notify(`操作已保存，但重新讀取失敗：${connectionMessage(e)}請重新整理，不必重複保存。`,true);}return {result};}
+  catch(e){notify(saveErrorMessage(e),true);return undefined;}finally{setBusy(false);}
  }
  function enterPreview(){setPreview(true);setData(previewData);setNotice(null);}
  const subjects=data.subjects;

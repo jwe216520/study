@@ -7,6 +7,55 @@ const sid='10000000-0000-4000-8000-000000000001',cid='10000000-0000-4000-8000-00
 const nid='10000000-0000-4000-8000-000000000005',fid='10000000-0000-4000-8000-000000000006',qid='10000000-0000-4000-8000-000000000007';
 const created_at='2026-10-07T00:00:00Z';
 const sources=[{materialId:mid,page:2}];
+test('usage network failure replaces the waiting state and supports manual recovery',async({page})=>{
+ await mockWorkspace(page);
+ await page.route('**/api/usage',route=>route.abort('failed'));
+ await page.goto('/');await page.getByRole('button',{name:'監視器',exact:true}).click();
+ await expect(page.locator('.usage-alert, .toast.error')).toContainText('網站統計 API（/api/usage）');
+ await expect(page.getByText('統計查詢失敗，尚未取得服務狀態。', {exact:false})).toHaveCount(2);
+ await expect(page.getByText('等待設定與首次查詢。')).toHaveCount(0);
+ await page.route('**/api/usage',route=>route.fulfill({json:{checkedAt:new Date().toISOString(),supabase:{status:'unconfigured',message:'尚未設定 Supabase 唯讀 Token'},cloudflare:{status:'unconfigured',message:'尚未設定 Cloudflare 唯讀 Token'}}}));
+ await page.getByRole('button',{name:'更新用量'}).click();
+ await expect(page.locator('.usage-alert, .toast.error')).toHaveCount(0);
+ await expect(page.getByText('尚未設定 Supabase 唯讀 Token',{exact:true})).toBeVisible();
+});
+
+test('saved scope remains saved when the subsequent workspace refresh fails',async({page})=>{
+ const {data}=await mockWorkspace(page);let writes=0;
+ await page.route('**/rest/v1/scopes**',async route=>{
+  if(route.request().method()==='POST'){
+   writes++;const row={...route.request().postDataJSON(),id:crypto.randomUUID(),revision:1,created_at};data.scopes.push(row);
+   return route.fulfill({json:row});
+  }
+  if(writes)return route.abort('failed');
+  return route.fallback();
+ });
+ await page.goto('/');await page.getByRole('button',{name:'教材與範圍',exact:true}).click();
+ await page.getByRole('button',{name:'新增範圍',exact:true}).click();
+ await page.getByLabel('範圍名稱').fill('已保存的範圍');await page.getByRole('button',{name:'保存範圍'}).click();
+ // The SDK retries safe GET requests before returning a network error.
+ await expect(page.locator('.toast.error')).toContainText('操作已保存，但重新讀取失敗',{timeout:30000});
+ await expect(page.locator('.toast.error')).toContainText('不必重複保存');
+ await expect(page.getByRole('dialog',{name:'新增學習範圍'})).toHaveCount(0);
+ expect(writes).toBe(1);expect(data.scopes.filter(s=>s.name==='已保存的範圍')).toHaveLength(1);
+});
+
+test('scope network write failure preserves input and does not automatically submit again',async({page})=>{
+ const {calls}=await mockWorkspace(page);let writes=0;
+ await page.route('**/rest/v1/scopes**',route=>{if(route.request().method()==='POST'){writes++;return route.abort('failed');}return route.fallback();});
+ await page.goto('/');await page.getByRole('button',{name:'教材與範圍',exact:true}).click();
+ await page.getByRole('button',{name:'新增範圍',exact:true}).click();
+ await page.getByLabel('範圍名稱').fill('保留的範圍');
+ await page.getByRole('button',{name:'保存範圍'}).click();
+ await expect(page.locator('.usage-alert, .toast.error')).toContainText('無法確認是否已寫入');
+ await expect(page.getByRole('dialog',{name:'新增學習範圍'})).toBeVisible();
+ await expect(page.getByLabel('範圍名稱')).toHaveValue('保留的範圍');
+ expect(writes).toBe(1);
+ const before=calls.length;await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ expect(calls.length).toBe(before);
+ await expect(page.locator('.usage-alert, .toast.error')).toContainText('無法確認是否已寫入');
+});
+
 test('usage monitor works without a scope and distinguishes quota alerts from missing data',async({page})=>{
  const {data}=await mockWorkspace(page);data.scopes=[];
  await page.route('**/api/usage',route=>route.fulfill({json:{checkedAt:new Date().toISOString(),supabase:{status:'ready',metrics:{database:{value:460},storage:{value:.75}},message:'本專案空間統計'},cloudflare:{status:'ready',requests:72000,studyRequests:100,studyErrors:2,errors:3,message:'UTC 今日'}}}));
@@ -24,7 +73,7 @@ test('usage monitor works without a scope and distinguishes quota alerts from mi
  await page.screenshot({path:'test-results/usage-mobile.png',fullPage:true});
  await page.route('**/api/usage',route=>route.fulfill({status:403,json:{error:'此頁僅供監測管理者查看'}}));
  await page.getByRole('button',{name:'更新用量'}).click();
- await expect(page.getByRole('alert')).toContainText('下方保留上次資料');
+ await expect(page.locator('.usage-alert, .toast.error')).toContainText('下方保留上次資料');
   const anonymous=await page.request.get('/api/usage');expect(anonymous.status()).toBe(401);
 });
 const question={prompt:'這是測試題，請選擇 A。',options:['測試答案 A','測試答案 B','測試答案 C','測試答案 D'],answerIndex:0,explanation:'測試解析：正解為 A。',concepts:['測試概念'],sources};
@@ -72,7 +121,7 @@ test('valid PDF uploads pass browser inspection and server validation; version n
  await page.getByLabel('上傳 PDF',{exact:true}).setInputFiles({name:'valid-chapter.pdf',mimeType:'application/pdf',buffer:bytes});
  await expect(page.getByText('教材已上傳並完成 PDF 驗證',{exact:true})).toBeVisible();
  expect(uploads).toBe(1);expect(finalized).toBe(1);await expect(page.getByRole('heading',{name:'valid-chapter.pdf'})).toBeVisible();
- await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.1.0'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
+ await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.1.1'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
  await page.getByRole('button',{name:'關閉提示',exact:true}).click();await page.screenshot({path:'test-results/versions-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.locator('aside.sidebar').evaluate(el=>el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.screenshot({path:'test-results/versions-mobile.png',fullPage:true});
 });
