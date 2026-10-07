@@ -91,6 +91,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=你的publishable或anon公開金鑰
 
 ## 備份與刪除
 
+「ChatGPT 工作區」下方新增「雲端用量監測」，可使用管理者限定的唯讀 API 自動取得 Cloudflare 今日請求／錯誤與 Supabase 專案空間。設定方法見 [USAGE-MONITOR.md](USAGE-MONITOR.md)。流量及 MAU 仍須到官方組織 Usage 核對，未設定或讀取失敗不會顯示成零用量。
+
 - 「匯出備份」包含科目、範圍、來源 metadata、學習內容、熟悉程度及歷史小考，沒有登入 token 或簽署網址。備份為明文，請自行存放在私人位置。
 - PDF 原檔要從教材頁**個別下載**，JSON 不包含 PDF。
 - 在 ChatGPT 工作區讀取備份（上限 20 MB），選擇要帶回的學習範圍並明確對應已上傳教材。重新驗證後只匯入筆記、單字與題目，全部重新核對。

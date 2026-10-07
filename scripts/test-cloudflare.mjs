@@ -6,6 +6,11 @@ const env = {
   STUDY_WORKERS_TEST: '1',
   NEXT_PUBLIC_SUPABASE_URL: 'https://study-test.supabase.co',
   NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ui-test-public-key',
+  // Only fixtures: browser management requests are mocked. Never use real Tokens in UI tests.
+  MONITOR_ADMIN_USER_ID: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  MONITOR_CF_ACCOUNT_ID: '00000000000000000000000000000000',
+  MONITOR_CF_API_TOKEN: 'test-only-not-a-real-token',
+  MONITOR_SUPABASE_TOKEN: 'test-only-not-a-real-token',
 };
 function run(script, args) {
   return new Promise((resolve, reject) => {

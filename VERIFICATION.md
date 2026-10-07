@@ -1,5 +1,13 @@
 # 第一版驗證紀錄
 
+## 雲端用量監測（2026-10-07）
+
+- 新增 ChatGPT 工作區下方的監測頁與 `/api/usage`，不需 migration。
+- 17 項程式測試通過，包含管理者隔離、憑證不回傳、五分鐘快取與 UTC 換日、部分查詢失敗。
+- lint 通過；Cloudflare 正式建置通過。
+- Workers 本機生產環境 5 組瀏覽器測試通過，使用模擬統計；監測頁在無學習範圍時仍可開啟，驗證額度提醒、未知資料與查詢失敗狀態，以及桌面／390px 手機。
+- 真實 Cloudflare Analytics、Supabase 唯讀查詢及正式部署尚未驗收，需要使用者設定 runtime Secrets。Supabase 組織 Egress／MAU 未自動串接，請使用官方 Usage 核對。
+
 驗證日期：2026-10-07（Asia/Taipei）。
 
 | 檢查 | 結果 | 範圍 |

@@ -9,6 +9,10 @@ export default defineConfig({
     assets: { notFoundHandling: "none" },
     env: {
       ASSETS: bindings.assets(),
+      MONITOR_ADMIN_USER_ID: bindings.secret(),
+      MONITOR_CF_ACCOUNT_ID: bindings.secret(),
+      MONITOR_CF_API_TOKEN: bindings.secret(),
+      MONITOR_SUPABASE_TOKEN: bindings.secret(),
     },
   }),
 });
