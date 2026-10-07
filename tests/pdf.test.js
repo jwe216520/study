@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { PDFDocument } from 'pdf-lib';
 import { validatePdfBytes } from '../lib/pdf-validation.js';
 import { MAX_PDF_BYTES } from '../lib/content.js';
+import { pdfReadError } from '../lib/pdf.js';
+test('PDF read errors distinguish encrypted or corrupt documents from reader failures',()=>{assert.match(pdfReadError({name:'PasswordException'}),/加密/);assert.match(pdfReadError({name:'InvalidPDFException'}),/結構/);assert.match(pdfReadError(new TypeError('destroy is not a function')),/讀取器/);});
 test('server PDF validation accepts a real PDF and verifies page count',async()=>{const doc=await PDFDocument.create();doc.addPage();doc.addPage();const bytes=await doc.save();assert.equal(await validatePdfBytes(bytes,bytes.length,2),2);await assert.rejects(()=>validatePdfBytes(bytes,bytes.length,3));await assert.rejects(()=>validatePdfBytes(bytes,bytes.length+1,2));});
 test('server PDF validation rejects renamed files, damaged and oversized PDFs',async()=>{const raw=new TextEncoder().encode('not a PDF');await assert.rejects(()=>validatePdfBytes(raw,raw.length,1));const broken=new TextEncoder().encode('%PDF-1.7\ncorrupt');await assert.rejects(()=>validatePdfBytes(broken,broken.length,1));const large=new Uint8Array(MAX_PDF_BYTES+1);await assert.rejects(()=>validatePdfBytes(large,large.length,1));});
 test('server rejects PDFs with an encryption dictionary',async()=>{const doc=await PDFDocument.create();doc.addPage();doc.context.trailerInfo.Encrypt=doc.context.register(doc.context.obj({Filter:'Standard'}));const bytes=await doc.save();await assert.rejects(()=>validatePdfBytes(bytes,bytes.length,1));});

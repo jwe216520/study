@@ -1,5 +1,13 @@
 # 第一版驗證紀錄
 
+## v1.1.0 PDF 上傳修正與版本紀錄（2026-10-07）
+
+- 使用使用者提供的 10,752,768 bytes／63 頁未加密 PDF 重現正式網站上傳前錯誤；PDF.js 成功解析後，舊程式呼叫不存在的 `PDFDocumentProxy.destroy()`，將 TypeError 誤報為檔案無法讀取。
+- 改為清理 `PDFDocumentLoadingTask`，清理失敗不覆蓋成功結果；另區分加密、損壞与讀取器錯誤，Worker URL 帶 PDF.js 版本號。
+- 導覽順序：ChatGPT 工作區 → 監視器 → 版本紀錄；版本頁不依賴章節／範圍。
+- 18 項程式測試、lint 與 Workers 建置通過；6 組 Workers／Edge 瀏覽器測試通過，包含實際 63 頁 PDF 的瀏覽器解析、模擬 Storage 上傳及真正 server validator。
+- 教材沒有提交 Git 或傳送到私人雲端。正式 Supabase 上傳與 Workers finalize API 的 CPU 限制仍需部署後驗收；本機模擬流程不代表正式上傳已完成。
+
 ## 雲端用量監測（2026-10-07）
 
 - 新增 ChatGPT 工作區下方的監測頁與 `/api/usage`，不需 migration。

@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { PDFDocument } from 'pdf-lib';
+import fs from 'node:fs/promises';
+import {validatePdfBytes} from '../../lib/pdf-validation.js';
 const uid='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const sid='10000000-0000-4000-8000-000000000001',cid='10000000-0000-4000-8000-000000000002',mid='10000000-0000-4000-8000-000000000003',rid='10000000-0000-4000-8000-000000000004';
 const nid='10000000-0000-4000-8000-000000000005',fid='10000000-0000-4000-8000-000000000006',qid='10000000-0000-4000-8000-000000000007';
@@ -9,14 +11,14 @@ test('usage monitor works without a scope and distinguishes quota alerts from mi
  const {data}=await mockWorkspace(page);data.scopes=[];
  await page.route('**/api/usage',route=>route.fulfill({json:{checkedAt:new Date().toISOString(),supabase:{status:'ready',metrics:{database:{value:460},storage:{value:.75}},message:'本專案空間統計'},cloudflare:{status:'ready',requests:72000,studyRequests:100,studyErrors:2,errors:3,message:'UTC 今日'}}}));
  await page.setViewportSize({width:1440,height:1000});await page.goto('/');
- await page.getByRole('button',{name:'雲端用量監測',exact:true}).click();
+ await page.getByRole('button',{name:'監視器',exact:true}).click();
  await expect(page.getByRole('heading',{name:'有用量接近免費額度'})).toBeVisible();
  await expect(page.getByText('即將達到額度',{exact:true})).toBeVisible();
  await expect(page.getByText('尚未取得用量，不以 0 顯示。')).toHaveCount(3);
  await expect(page.getByLabel('選擇科目')).toHaveCount(0);
  await page.screenshot({path:'test-results/usage-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});
- await expect(page.getByRole('heading',{name:'雲端用量監測',exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'監視器',exact:true})).toBeVisible();
   await expect.poll(()=>page.locator('aside.sidebar').evaluate(el=>el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.screenshot({path:'test-results/usage-mobile.png',fullPage:true});
@@ -48,6 +50,7 @@ async function mockWorkspace(page,{loggedIn=true}={}){
    return route.fulfill({body:JSON.stringify(response),contentType:'application/json'});
   }
   if(req.method()==='GET'&&data[table])return route.fulfill({json:data[table]});
+  if(req.method()==='POST'&&table==='materials'){const row={...body,status:'uploading',created_at};data.materials.push(row);return route.fulfill({json:row});}
   if(req.method()==='PATCH'&&data[table]){const id=u.searchParams.get('id')?.replace('eq.','');const row=data[table].find(r=>r.id===id);Object.assign(row,body);if(table==='scopes'){row.revision++;data.content_items.forEach(i=>i.reviewed=false);}return route.fulfill({json:row});}
   return route.fulfill({status:400,json:{message:'Unexpected request'}});
  });
@@ -58,6 +61,21 @@ async function mockWorkspace(page,{loggedIn=true}={}){
  },{uid,created_at});
  return {data,calls};
 }
+test('valid PDF uploads pass browser inspection and server validation; version navigation needs no scope',async({page})=>{
+ const {data}=await mockWorkspace(page);data.scopes=[];
+ const doc=await PDFDocument.create();for(let i=0;i<3;i++)doc.addPage();
+ const bytes=process.env.STUDY_PDF_FIXTURE?await fs.readFile(process.env.STUDY_PDF_FIXTURE):Buffer.from(await doc.save());
+ const expectedPages=(await PDFDocument.load(bytes)).getPageCount();let uploads=0,finalized=0;
+ await page.route('**/storage/v1/object/study-materials/**',async route=>{if(route.request().method()==='POST'){uploads++;return route.fulfill({json:{Key:'test'}});}return route.fallback();});
+ await page.route('**/api/materials/*/finalize',async route=>{const id=route.request().url().split('/').at(-2),row=data.materials.find(m=>m.id===id);expect(row.page_count).toBe(expectedPages);expect(row.bytes).toBe(bytes.length);await validatePdfBytes(bytes,row.bytes,row.page_count);row.status='ready';finalized++;return route.fulfill({json:{id,status:'ready'}});});
+ await page.goto('/');await page.getByRole('button',{name:'教材與範圍',exact:true}).click();
+ await page.getByLabel('上傳 PDF',{exact:true}).setInputFiles({name:'valid-chapter.pdf',mimeType:'application/pdf',buffer:bytes});
+ await expect(page.getByText('教材已上傳並完成 PDF 驗證',{exact:true})).toBeVisible();
+ expect(uploads).toBe(1);expect(finalized).toBe(1);await expect(page.getByRole('heading',{name:'valid-chapter.pdf'})).toBeVisible();
+ await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.1.0'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
+ await page.getByRole('button',{name:'關閉提示',exact:true}).click();await page.screenshot({path:'test-results/versions-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.locator('aside.sidebar').evaluate(el=>el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.screenshot({path:'test-results/versions-mobile.png',fullPage:true});
+});
 test('desktop: PDF, safe Markdown, import, flashcard and quiz workflow',async({page})=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  const {data,calls}=await mockWorkspace(page);await page.setViewportSize({width:1440,height:1000});await page.goto('/');
@@ -108,5 +126,5 @@ test('backup preview requires source mapping; invalid PDF uploads are rejected',
  await expect(page.getByRole('dialog',{name:'從備份準備學習內容'})).toBeVisible();await page.getByRole('button',{name:'帶入 JSON，重新驗證'}).click();await page.getByRole('button',{name:'驗證並預覽'}).click();await expect(page.getByText('格式及來源範圍檢查通過')).toBeVisible();
  await page.getByRole('button',{name:'教材與範圍',exact:true}).click();
  await page.getByLabel('上傳 PDF',{exact:true}).setInputFiles({name:'large.pdf',mimeType:'application/pdf',buffer:Buffer.alloc(20*1024*1024+1)});await expect(page.locator('.toast.error')).toContainText('上限為 20 MB');
- await page.getByLabel('上傳 PDF',{exact:true}).setInputFiles({name:'broken.pdf',mimeType:'application/pdf',buffer:Buffer.from('not a pdf')});await expect(page.locator('.toast.error')).toContainText('無法讀取 PDF');
+ await page.getByLabel('上傳 PDF',{exact:true}).setInputFiles({name:'broken.pdf',mimeType:'application/pdf',buffer:Buffer.from('not a pdf')});await expect(page.locator('.toast.error')).toContainText('PDF 結構無法讀取');
 });

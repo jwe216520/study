@@ -1,5 +1,7 @@
 # 拾知 Study｜護理個人學習網站
 
+目前程式版本 v1.1.0。導覽中的 ChatGPT 工作區下方為「監視器」，再下方為「版本紀錄」。PDF 上傳已修正 PDF.js 新版資源清理 API 相容性問題。
+
 以老師授課範圍為核心的私人學習網站。使用 Next.js App Router、React、JavaScript、Tailwind CSS、Supabase；先在自己的 ChatGPT 整理教材，再匯入筆記、單字卡與單選題。
 
 ## 本機啟動
