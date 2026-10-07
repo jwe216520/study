@@ -15,4 +15,20 @@ test('HTML stays inert string data; executable unknown fields are rejected',()=>
 test('prompt includes exact materials, PDF page convention and weak concepts',()=>{const p=makePrompt(scope,materials,['位置']);for(const text of [materialId,'第 2–4 頁','第五頁','弱點概念：位置','不是書本印刷頁碼','answerIndex 從 0'])assert.ok(p.includes(text));});
 test('weak concepts include wrong and uncertain correct answers, unique',()=>{assert.deepEqual(weakConcepts([{results:[{correct:false,uncertain:false,payload:{concepts:['位置']}},{correct:true,uncertain:true,payload:{concepts:['位置','功能']}},{correct:true,uncertain:false,payload:{concepts:['熟悉']}}]}]),['位置','功能']);});
 test('shuffle preserves input and all elements',()=>{const a=[1,2,3,4];const b=shuffle(a,()=>0);assert.deepEqual(a,[1,2,3,4]);assert.deepEqual([...b].sort(),a);assert.notDeepEqual(b,a);});
+test('v2 imports omit cards and legacy imports report skipped cards',()=>{
+ const card={english:'term',chinese:'名稱',sources:[],concepts:[],explanation:''};
+ const current=parseBatch(JSON.stringify({schemaVersion:2,questions:[question]}),scope,materials);
+ assert.equal(current.schemaVersion,2);assert.equal(current.ignoredFlashcards,0);
+ const legacy=parseBatch(JSON.stringify({schemaVersion:1,questions:[question],flashcards:[card]}),scope,materials);
+ assert.equal(legacy.ignoredFlashcards,1);assert.deepEqual(legacy.flashcards,[]);
+ assert.throws(()=>parseBatch(JSON.stringify({schemaVersion:2,questions:[question],flashcards:[card]}),scope,materials));
+ assert.equal(sourceErrors(card,'flashcard',null,[]).length,0);
+});
+test('prompts request adjustable questions with no generated cards',()=>{
+ assert.match(makePrompt(scope,materials),/50 題單選題/);
+ assert.match(makePrompt(scope,materials,[],100),/100 題單選題/);
+ assert.match(makePrompt(scope,materials),/不要產生單字卡/);
+ assert.doesNotMatch(makePrompt(scope,materials),/"flashcards"/);
+ assert.throws(()=>makePrompt(scope,materials,[],101));
+});
 test('backup restoration requires explicit mapping and preserves original sources',()=>{const p={schemaVersion:1,questions:[question]};assert.throws(()=>remapLearningSources(p,{}));const mapped=remapLearningSources(p,{[materialId]:'20000000-0000-4000-8000-000000000001'});assert.equal(mapped.questions[0].sources[0].page,3);assert.equal(p.questions[0].sources[0].materialId,materialId);assert.equal(mapped.questions[0].sources[0].materialId,'20000000-0000-4000-8000-000000000001');});

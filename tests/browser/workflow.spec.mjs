@@ -7,6 +7,34 @@ const sid='10000000-0000-4000-8000-000000000001',cid='10000000-0000-4000-8000-00
 const nid='10000000-0000-4000-8000-000000000005',fid='10000000-0000-4000-8000-000000000006',qid='10000000-0000-4000-8000-000000000007';
 const created_at='2026-10-07T00:00:00Z';
 const sources=[{materialId:mid,page:2}];
+test('empty account creates independent cards, renames decks and edits without review',async({page})=>{
+ const {data}=await mockWorkspace(page);for(const name of Object.keys(data))data[name]=[];
+ await page.setViewportSize({width:390,height:844});await page.goto('/');
+ await page.getByRole('button',{name:'開啟選單'}).click();await page.getByRole('button',{name:'單字卡',exact:true}).click();
+ await expect(page.getByLabel('選擇科目')).toHaveCount(0);
+ await page.getByRole('button',{name:'新增單字',exact:true}).click();
+ await page.getByLabel('英文',{exact:true}).fill('nurse');await page.getByLabel('中文',{exact:true}).fill('護理師');
+ await expect(page.getByText('來源頁碼',{exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'保存內容'}).click();await expect(page.getByRole('button',{name:'翻轉單字卡'})).toContainText('nurse');
+ expect(data.content_items[0].scope_id).toBeNull();await expect(page.getByLabel('單字集',{exact:true})).toContainText('我的單字');
+ await page.getByRole('button',{name:'重新命名',exact:true}).click();await page.getByLabel('單字集名稱').fill('醫護英文');await page.getByRole('button',{name:'保存單字集'}).click();
+ await expect(page.getByLabel('單字集',{exact:true})).toContainText('醫護英文');
+ await page.getByRole('button',{name:'翻轉單字卡'}).click();await page.getByRole('button',{name:'已經熟悉'}).click();
+ await expect.poll(()=>data.card_progress[0]?.familiarity).toBe('familiar');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+});
+
+test('practice persists individual answers, resumes and separates results from exams',async({page})=>{
+ const {data}=await mockWorkspace(page);data.content_items.push({...data.content_items.find(i=>i.kind==='question'),id:crypto.randomUUID(),payload:{...question,prompt:'第二道練習題'}});
+ await page.goto('/');await page.getByRole('button',{name:'小考與複習',exact:true}).click();
+ await expect(page.getByLabel('題目數量')).toHaveValue('20');await page.getByLabel('練習方式').selectOption('practice');await page.getByRole('button',{name:'開始逐題練習'}).click();
+ let dialog=page.getByRole('dialog');await dialog.getByRole('radio').first().check();await dialog.getByRole('button',{name:'確認答案'}).click();
+ await expect(dialog).toContainText('正解：A');expect(data.quiz_attempts[0].results).toHaveLength(1);await page.getByRole('button',{name:'關閉',exact:true}).click();
+ await page.getByRole('button',{name:/逐題練習.*繼續作答/}).click();dialog=page.getByRole('dialog');await expect(dialog).toContainText('第二道練習題');
+ await dialog.getByRole('radio').first().check();await dialog.getByRole('button',{name:'確認答案'}).click();await dialog.getByRole('button',{name:'查看練習結果'}).click();
+ await expect(page.getByRole('dialog',{name:'逐題練習結果與解析'})).toContainText('本次成績');await page.getByRole('button',{name:'關閉',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'我的逐題練習紀錄'})).toBeVisible();await page.getByLabel('練習方式').selectOption('mistakes');await expect(page.getByRole('button',{name:'開始錯題重練'})).toBeEnabled();
+});
 test('usage network failure replaces the waiting state and supports manual recovery',async({page})=>{
  await mockWorkspace(page);
  await page.route('**/api/usage',route=>route.abort('failed'));
@@ -79,7 +107,7 @@ test('usage monitor works without a scope and distinguishes quota alerts from mi
 const question={prompt:'這是測試題，請選擇 A。',options:['測試答案 A','測試答案 B','測試答案 C','測試答案 D'],answerIndex:0,explanation:'測試解析：正解為 A。',concepts:['測試概念'],sources};
 async function mockWorkspace(page,{loggedIn=true}={}){
  const pdf=await PDFDocument.create();for(let i=0;i<6;i++)pdf.addPage().drawText(`Test page ${i+1}`);const bytes=await pdf.save();
- const data={subjects:[{id:sid,name:'解剖學',created_at}],chapters:[{id:cid,subject_id:sid,name:'測試章節',created_at}],materials:[{id:mid,chapter_id:cid,name:'test-chapter.pdf',storage_path:`${uid}/${mid}.pdf`,bytes:bytes.length,page_count:6,status:'ready',created_at}],scopes:[{id:rid,chapter_id:cid,name:'測試授課範圍',ranges:[{materialId:mid,pageStart:1,pageEnd:4}],teacher_focus:'測試概念',exclusions:'第五頁',revision:1,created_at}],content_items:[{id:nid,scope_id:rid,kind:'note',payload:{title:'測試概念筆記',markdown:'## 概念關係\n測試文字。\n\n<script>window.studyXss = true</script>\n\n![圖片](https://example.com/tracker.png)',supplement:false,concepts:['測試概念'],sources},reviewed:true,reviewed_revision:1,excluded:false,created_at},{id:fid,scope_id:rid,kind:'flashcard',payload:{english:'anatomy',chinese:'解剖學',explanation:'測試單字說明',concepts:['測試概念'],sources},reviewed:true,reviewed_revision:1,excluded:false,created_at},{id:qid,scope_id:rid,kind:'question',payload:question,reviewed:true,reviewed_revision:1,excluded:false,created_at}],card_progress:[],quiz_attempts:[]};
+ const data={flashcard_decks:[{id:rid,name:'測試單字集',created_at}],subjects:[{id:sid,name:'解剖學',created_at}],chapters:[{id:cid,subject_id:sid,name:'測試章節',created_at}],materials:[{id:mid,chapter_id:cid,name:'test-chapter.pdf',storage_path:`${uid}/${mid}.pdf`,bytes:bytes.length,page_count:6,status:'ready',created_at}],scopes:[{id:rid,chapter_id:cid,name:'測試授課範圍',ranges:[{materialId:mid,pageStart:1,pageEnd:4}],teacher_focus:'測試概念',exclusions:'第五頁',revision:1,created_at}],content_items:[{id:nid,scope_id:rid,kind:'note',payload:{title:'測試概念筆記',markdown:'## 概念關係\n測試文字。\n\n<script>window.studyXss = true</script>\n\n![圖片](https://example.com/tracker.png)',supplement:false,concepts:['測試概念'],sources},reviewed:true,reviewed_revision:1,excluded:false,created_at},{id:fid,deck_id:rid,scope_id:rid,kind:'flashcard',payload:{english:'anatomy',chinese:'解剖學',explanation:'測試單字說明',concepts:['測試概念'],sources},reviewed:true,reviewed_revision:1,excluded:false,created_at},{id:qid,scope_id:rid,kind:'question',payload:question,reviewed:true,reviewed_revision:1,excluded:false,created_at}],card_progress:[],quiz_attempts:[]};
  const calls=[];
  await page.route('https://study-test.supabase.co/**',async route=>{
   const req=route.request(),u=new URL(req.url()),path=u.pathname;let response;
@@ -91,16 +119,21 @@ async function mockWorkspace(page,{loggedIn=true}={}){
    calls.push({name:table,body});
    if(table==='set_card_progress'){data.card_progress=[{item_id:body.p_id,familiarity:body.p_familiarity,updated_at:created_at}];response=null;}
    else if(table==='review_item'){const item=data.content_items.find(i=>i.id===body.p_id);Object.assign(item,{reviewed:!body.p_excluded,excluded:body.p_excluded,reviewed_revision:1});response=null;}
-   else if(table==='import_content'){for(const [key,kind] of [['notes','note'],['flashcards','flashcard'],['questions','question']])for(const payload of body.p_payload[key])data.content_items.push({id:crypto.randomUUID(),scope_id:rid,kind,payload,reviewed:false,excluded:false,created_at});response=body.p_batch;}
+   else if(table==='import_content'){for(const [key,kind] of [['notes','note'],['flashcards','flashcard'],['questions','question']])for(const payload of (body.p_payload[key]||[]))data.content_items.push({id:crypto.randomUUID(),scope_id:rid,kind,payload,reviewed:true,excluded:false,created_at});response=body.p_batch;}
    else if(table==='start_quiz'){response={id:crypto.randomUUID(),scope_id:rid,scope_revision:1,snapshot:[{questionId:qid,payload:question}],created_at,completed_at:null};data.quiz_attempts.push(response);}
    else if(table==='submit_quiz'){response=data.quiz_attempts.find(a=>a.id===body.p_attempt);const a=body.p_answers[0];Object.assign(response,{score:a.choice===0?1:0,completed_at:created_at,results:[{questionId:qid,payload:question,choice:a.choice,uncertain:a.uncertain,correct:a.choice===0}]});}
+   else if(table==='set_item_excluded'){data.content_items.find(i=>i.id===body.p_id).excluded=body.p_excluded;response=null;}
+   else if(table==='save_flashcard'){let deck=body.p_deck;if(!deck){deck=crypto.randomUUID();data.flashcard_decks.push({id:deck,name:'我的單字',created_at});}response=body.p_id||crypto.randomUUID();const existing=data.content_items.find(i=>i.id===response);if(existing)existing.payload=body.p_payload;else data.content_items.push({id:response,deck_id:deck,scope_id:null,kind:'flashcard',payload:body.p_payload,reviewed:true,excluded:false,created_at});}
+   else if(table==='start_practice'){response={id:crypto.randomUUID(),scope_id:rid,scope_revision:1,mode:'practice',practice_filter:body.p_filter,snapshot:data.content_items.filter(i=>i.kind==='question'&&!i.excluded).slice(0,body.p_count).map(i=>({questionId:i.id,payload:i.payload})),results:[],score:0,created_at,completed_at:null};data.quiz_attempts.push(response);}
+   else if(table==='submit_practice_answer'){response=data.quiz_attempts.find(a=>a.id===body.p_attempt);if(response.results.length===body.p_index){const q=response.snapshot[body.p_index],correct=body.p_choice===q.payload.answerIndex;response.results.push({...q,choice:body.p_choice,uncertain:body.p_uncertain,correct});response.score+=Number(correct);if(response.results.length===response.snapshot.length)response.completed_at=new Date().toISOString();}}
    else if(table==='save_item'){response=body.p_id||crypto.randomUUID();const existing=data.content_items.find(i=>i.id===response);if(existing){existing.payload=body.p_payload;existing.reviewed=false;}else data.content_items.push({id:response,kind:body.p_kind,payload:body.p_payload,scope_id:rid,reviewed:false,excluded:false,created_at});}
    else return route.fulfill({status:400,json:{message:`Unexpected RPC ${table}`}});
    return route.fulfill({body:JSON.stringify(response),contentType:'application/json'});
   }
   if(req.method()==='GET'&&data[table])return route.fulfill({json:data[table]});
+  if(req.method()==='POST'&&table==='flashcard_decks'){const row={...body,id:crypto.randomUUID(),created_at};data.flashcard_decks.push(row);return route.fulfill({json:row});}
   if(req.method()==='POST'&&table==='materials'){const row={...body,status:'uploading',created_at};data.materials.push(row);return route.fulfill({json:row});}
-  if(req.method()==='PATCH'&&data[table]){const id=u.searchParams.get('id')?.replace('eq.','');const row=data[table].find(r=>r.id===id);Object.assign(row,body);if(table==='scopes'){row.revision++;data.content_items.forEach(i=>i.reviewed=false);}return route.fulfill({json:row});}
+  if(req.method()==='PATCH'&&data[table]){const id=u.searchParams.get('id')?.replace('eq.','');const row=data[table].find(r=>r.id===id);Object.assign(row,body);if(table==='scopes'){row.revision++;}return route.fulfill({json:row});}
   return route.fulfill({status:400,json:{message:'Unexpected request'}});
  });
  if(loggedIn)await page.addInitScript(({uid,created_at})=>{
@@ -121,7 +154,7 @@ test('valid PDF uploads pass browser inspection and server validation; version n
  await page.getByLabel('上傳 PDF',{exact:true}).setInputFiles({name:'valid-chapter.pdf',mimeType:'application/pdf',buffer:bytes});
  await expect(page.getByText('教材已上傳並完成 PDF 驗證',{exact:true})).toBeVisible();
  expect(uploads).toBe(1);expect(finalized).toBe(1);await expect(page.getByRole('heading',{name:'valid-chapter.pdf'})).toBeVisible();
- await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.1.1'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
+ await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.2.0'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
  await page.getByRole('button',{name:'關閉提示',exact:true}).click();await page.screenshot({path:'test-results/versions-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.locator('aside.sidebar').evaluate(el=>el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.screenshot({path:'test-results/versions-mobile.png',fullPage:true});
 });
@@ -144,7 +177,7 @@ test('desktop: PDF, safe Markdown, import, flashcard and quiz workflow',async({p
  await page.getByRole('button',{name:'驗證並預覽'}).click();await expect(page.locator('.import-error')).toContainText('不在授課範圍');
  await raw.fill(JSON.stringify({schemaVersion:1,questions:[{...question,prompt:'新匯入測試題'}]}));await page.getByRole('button',{name:'驗證並預覽'}).click();
  await expect(page.getByText('格式及來源範圍檢查通過')).toBeVisible();await page.getByRole('button',{name:'確認匯入 1 筆內容'}).click();
- await expect.poll(()=>data.content_items.length).toBe(4);expect(data.content_items.at(-1).reviewed).toBe(false);
+ await expect.poll(()=>data.content_items.length).toBe(4);expect(data.content_items.at(-1).reviewed).toBe(true);
  await page.getByRole('button',{name:'小考與複習',exact:true}).click();await page.getByRole('button',{name:'開始小考',exact:true}).click();
  const quiz=page.getByRole('dialog');await expect(quiz).toContainText('這是測試題');await quiz.getByRole('radio').first().check();
  await quiz.getByRole('button',{name:'交卷並查看解析'}).click();await expect(page.getByRole('dialog',{name:'小考結果與解析'})).toContainText('測試解析');
@@ -157,9 +190,9 @@ test('mobile: no horizontal overflow, navigation, manual editing and scope revis
  const {data}=await mockWorkspace(page);await page.setViewportSize({width:390,height:844});await page.goto('/');await expect(page.getByRole('heading',{name:'學習總覽',exact:true})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.screenshot({path:'test-results/mobile-overview.png',fullPage:true});
  await page.getByRole('button',{name:'開啟選單'}).click();await page.getByRole('button',{name:'單字卡',exact:true}).click();
- await page.getByRole('button',{name:'新增單字'}).click();const editor=page.getByRole('dialog');await editor.getByLabel('英文',{exact:true}).fill('posterior');await editor.getByLabel('中文',{exact:true}).fill('後側');await editor.getByRole('button',{name:'保存為待核對'}).click();await expect.poll(()=>data.content_items.length).toBe(4);
- await page.getByRole('button',{name:'管理與核對'}).click();const added=page.locator('.management-card').filter({hasText:'posterior'});await added.getByRole('button',{name:'我已核對',exact:true}).click();await expect.poll(()=>data.content_items.at(-1).reviewed).toBe(true);
- await page.getByRole('button',{name:'開啟選單'}).click();await page.getByRole('button',{name:'教材與範圍',exact:true}).click();await page.getByRole('button',{name:'修改範圍'}).click();await page.getByLabel('老師強調的重點').fill('更新後重點');await page.getByRole('button',{name:'保存範圍'}).click();await expect.poll(()=>data.scopes[0].revision).toBe(2);expect(data.content_items.every(i=>!i.reviewed)).toBe(true);
+ await page.getByRole('button',{name:'新增單字',exact:true}).click();const editor=page.getByRole('dialog');await editor.getByLabel('英文',{exact:true}).fill('posterior');await editor.getByLabel('中文',{exact:true}).fill('後側');await editor.getByRole('button',{name:'保存內容'}).click();await expect.poll(()=>data.content_items.length).toBe(4);
+ await page.getByRole('button',{name:'管理單字'}).click();await expect(page.locator('.management-card').filter({hasText:'posterior'})).toBeVisible();await expect(page.getByRole('button',{name:'我已核對',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'開啟選單'}).click();await page.getByRole('button',{name:'教材與範圍',exact:true}).click();await page.getByRole('button',{name:'修改範圍'}).click();await page.getByLabel('老師強調的重點').fill('更新後重點');await page.getByRole('button',{name:'保存範圍'}).click();await expect.poll(()=>data.scopes[0].revision).toBe(2);expect(data.content_items.every(i=>i.reviewed)).toBe(true);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
 });
 test('logged-out welcome, preview and unauthenticated finalize are safe',async({page,request})=>{
@@ -170,7 +203,7 @@ test('logged-out welcome, preview and unauthenticated finalize are safe',async({
 test('backup preview requires source mapping; invalid PDF uploads are rejected',async({page})=>{
  const {data}=await mockWorkspace(page);await page.goto('/');await expect(page.getByRole('heading',{name:'學習總覽',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'ChatGPT 工作區',exact:true}).click();
- const backup={backupVersion:1,materials:data.materials,learningBatches:[{scopeId:rid,scopeName:'備份範圍',payload:{schemaVersion:1,notes:[],flashcards:[],questions:[question]}}]};
+ const backup={backupVersion:2,materials:data.materials,learningBatches:[{scopeId:rid,scopeName:'備份範圍',payload:{schemaVersion:1,notes:[],flashcards:[],questions:[question]}}]};
  await page.getByLabel('讀取 JSON',{exact:true}).setInputFiles({name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(backup))});
  await expect(page.getByRole('dialog',{name:'從備份準備學習內容'})).toBeVisible();await page.getByRole('button',{name:'帶入 JSON，重新驗證'}).click();await page.getByRole('button',{name:'驗證並預覽'}).click();await expect(page.getByText('格式及來源範圍檢查通過')).toBeVisible();
  await page.getByRole('button',{name:'教材與範圍',exact:true}).click();

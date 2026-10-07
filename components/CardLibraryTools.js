@@ -1,0 +1,13 @@
+'use client';
+import { useState } from 'react';
+import { Field, Modal } from './ui';
+import { insertRow, updateRow, rpc } from '@/lib/repository';
+import { cardBackupDecks } from '@/lib/card-backup';
+export function CardLibraryTools({data,selectedDeck,onSelect,busy,action,notify}) {
+ const [editor,setEditor]=useState(null),[name,setName]=useState(''),[backup,setBackup]=useState(null);
+ async function read(file){if(!file)return;try{if(file.size>2*1024*1024)throw new Error('備份上限 2 MB');setBackup(cardBackupDecks(JSON.parse(await file.text())));}catch(e){notify(e.message,true);}}
+ return <section className="panel"><div className="inline-actions"><Field label="單字集"><select aria-label="單字集" value={selectedDeck?.id||''} onChange={e=>onSelect(e.target.value)}><option value="" disabled>新增第一張單字會建立「我的單字」</option>{(data.flashcard_decks||[]).map(d=><option key={d.id} value={d.id}>{d.name}</option>)}</select></Field><button className="button secondary" disabled={busy} onClick={()=>{setName('');setEditor('new');}}>新增單字集</button><button className="button secondary" disabled={busy||!selectedDeck} onClick={()=>{setName(selectedDeck.name);setEditor('rename');}}>重新命名</button><label className="button secondary">從備份還原單字<input className="sr-only" aria-label="還原單字備份" type="file" accept=".json" disabled={busy} onChange={e=>{read(e.target.files[0]);e.target.value='';}}/></label></div>
+ {editor&&<Modal title={editor==='new'?'新增單字集':'重新命名單字集'} onClose={()=>setEditor(null)}><form onSubmit={async e=>{e.preventDefault();const saved=await action(()=>editor==='new'?insertRow('flashcard_decks',{name:name.trim()}):updateRow('flashcard_decks',selectedDeck.id,{name:name.trim()}),'單字集已保存');if(saved){onSelect(saved.result.id);setEditor(null);}}}><Field label="單字集名稱"><input required maxLength={100} value={name} onChange={e=>setName(e.target.value)}/></Field><button className="button primary" disabled={busy}>保存單字集</button></form></Modal>}
+ {backup&&<Modal title="還原單字備份" onClose={()=>setBackup(null)}><p>保存後即可複習。相同代號的現有單字會保留，不覆寫內容或熟悉程度。</p>{backup.map((group,i)=><div key={i} className="management-card"><p>{group.name} · {group.cards.length} 張</p><button className="button primary" disabled={busy||group.restored} onClick={async()=>{const saved=await action(async()=>{let id;for(let offset=0;offset<group.cards.length;offset+=300)id=await rpc('restore_flashcards',{p_name:group.name,p_cards:group.cards.slice(offset,offset+300)});return id;},'單字備份已還原');if(saved){onSelect(saved.result);setBackup(groups=>groups.map((g,n)=>n===i?{...g,restored:true}:g));}}}>{group.restored?'已還原':'還原這個單字集'}</button></div>)}</Modal>}
+ </section>;
+}
