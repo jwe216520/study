@@ -157,3 +157,7 @@ ChatGPT 預設產生 50 題，可選 10–100 題，教材不足時減少題目�
 - [Cloudflare Next.js](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/)
 
 下一階段再加入完整間隔複習、解剖圖遮罩與直接 AI 串接；目前沒有同學分享、公開教材、臨床決策或自動 OCR 功能。
+
+## v1.2.1 更新
+
+先執行 `003_delete_flashcard.sql` 再部署前端。管理單字每頁 10 張，刪除需確認，永久移除單字卡及熟悉程度但保留單字集。排除仍可恢復；既有備份還原可能重新加入已刪除卡片。

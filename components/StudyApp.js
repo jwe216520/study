@@ -36,7 +36,7 @@ export default function StudyApp() {
  const refresh=useCallback(async()=>{
   if(!session)return;
   const requestedUser=session.user.id;
-  const workspace=await loadWorkspace();if(latestUser.current===requestedUser)setData(workspace);
+  const workspace=await loadWorkspace();if(latestUser.current===requestedUser){setData(workspace);return workspace;}
  },[session]);
  useEffect(()=>{
   if(!session)return;

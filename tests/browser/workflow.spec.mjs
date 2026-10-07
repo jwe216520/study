@@ -7,6 +7,42 @@ const sid='10000000-0000-4000-8000-000000000001',cid='10000000-0000-4000-8000-00
 const nid='10000000-0000-4000-8000-000000000005',fid='10000000-0000-4000-8000-000000000006',qid='10000000-0000-4000-8000-000000000007';
 const created_at='2026-10-07T00:00:00Z';
 const sources=[{materialId:mid,page:2}];
+for(const count of [0,1,10,11,20,21])test(`card management paginates ${count} cards`,async({page})=>{
+ const {data}=await mockWorkspace(page);const base=data.content_items.find(i=>i.kind==='flashcard');
+ data.content_items=Array.from({length:count},(_,n)=>({...base,id:`20000000-0000-4000-8000-${String(n).padStart(12,'0')}`,excluded:n===0,payload:{...base.payload,english:`word${n}`}}));
+ await page.goto('/');await page.getByRole('button',{name:'單字卡',exact:true}).click();await page.getByRole('button',{name:'管理單字'}).click();
+ await expect(page.locator('.management-card')).toHaveCount(Math.min(10,count));
+ if(!count){await expect(page.getByRole('heading',{name:'還沒有單字卡'})).toBeVisible();return;}
+ const nav=page.getByRole('navigation',{name:'單字管理分頁'});
+ await expect(nav).toContainText(`第 1 / ${Math.ceil(count/10)} 頁 · 共 ${count} 張`);await expect(nav.getByRole('button',{name:'上一頁'})).toBeDisabled();
+ if(count<=10){await expect(nav.getByRole('button',{name:'下一頁'})).toBeDisabled();return;}
+ await nav.getByRole('button',{name:'下一頁'}).click();await expect(page.locator('.management-card')).toHaveCount(Math.min(10,count-10));
+ await page.getByRole('button',{name:'返回複習'}).click();await page.getByRole('button',{name:'管理單字'}).click();await expect(nav).toContainText('第 1 /');
+});
+
+test('delete confirmation, last-page clamping, familiarity cascade and empty deck on mobile',async({page})=>{
+ const {data,calls}=await mockWorkspace(page);const base=data.content_items.find(i=>i.kind==='flashcard');
+ data.content_items=Array.from({length:11},(_,n)=>({...base,id:`20000000-0000-4000-8000-${String(n).padStart(12,'0')}`,payload:{...base.payload,english:`word${n}`}}));
+ const target=data.content_items[10];data.card_progress=[{item_id:target.id,familiarity:'familiar'}];
+ await page.setViewportSize({width:390,height:844});await page.goto('/');await page.getByRole('button',{name:'開啟選單'}).click();await page.getByRole('button',{name:'單字卡',exact:true}).click();await page.getByRole('button',{name:'管理單字'}).click();
+ const nav=page.getByRole('navigation',{name:'單字管理分頁'});await nav.getByRole('button',{name:'下一頁'}).click();await page.getByRole('button',{name:'刪除單字卡 word10',exact:true}).click();
+ let dialog=page.getByRole('dialog',{name:'刪除單字卡'});await expect(dialog).toContainText('word10');await expect(dialog).toContainText('解剖學');await dialog.getByRole('button',{name:'取消',exact:true}).click();expect(calls.filter(c=>c.name==='delete_flashcard')).toHaveLength(0);
+ await page.getByRole('button',{name:'刪除單字卡 word10',exact:true}).click();await page.screenshot({path:'test-results/delete-card-mobile.png',fullPage:true});await dialog.getByRole('button',{name:'確認刪除'}).click();await expect(dialog).toHaveCount(0);
+ await expect(nav).toContainText('第 1 / 1 頁 · 共 10 張');expect(data.card_progress).toHaveLength(0);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+ // External sync removes the remaining cards; the deck remains selectable.
+ data.content_items=[];await page.getByRole('button',{name:'重新同步',exact:true}).click();await expect(page.getByRole('heading',{name:'還沒有單字卡'})).toBeVisible();await expect(page.getByLabel('單字集',{exact:true})).toContainText('測試單字集');
+ await page.getByRole('button',{name:'返回複習'}).click();await expect(page.getByText(/新增單字後即可複習/)).toBeVisible();
+});
+
+test('delete network ambiguity is reconciled without duplicate submissions',async({page})=>{
+ const {data}=await mockWorkspace(page);let writes=0;let commit=false;
+ await page.route('**/rpc/delete_flashcard',route=>{writes++;if(commit)data.content_items=data.content_items.filter(i=>i.id!==fid);return route.abort('failed');});
+ await page.goto('/');await page.getByRole('button',{name:'單字卡',exact:true}).click();await page.getByRole('button',{name:'管理單字'}).click();await page.getByRole('button',{name:'刪除單字卡 anatomy',exact:true}).click();
+ const dialog=page.getByRole('dialog',{name:'刪除單字卡'});await dialog.getByRole('button',{name:'確認刪除'}).click();await expect(dialog.getByRole('alert')).toContainText('刪除結果尚未確認');expect(writes).toBe(1);await expect(page.locator('.management-card')).toHaveCount(1);
+ commit=true;await dialog.getByRole('button',{name:'確認刪除'}).click();await expect(dialog).toHaveCount(0);expect(writes).toBe(2);await expect(page.locator('.management-card')).toHaveCount(0);
+});
+
 test('empty account creates independent cards, renames decks and edits without review',async({page})=>{
  const {data}=await mockWorkspace(page);for(const name of Object.keys(data))data[name]=[];
  await page.setViewportSize({width:390,height:844});await page.goto('/');
@@ -122,6 +158,7 @@ async function mockWorkspace(page,{loggedIn=true}={}){
    else if(table==='import_content'){for(const [key,kind] of [['notes','note'],['flashcards','flashcard'],['questions','question']])for(const payload of (body.p_payload[key]||[]))data.content_items.push({id:crypto.randomUUID(),scope_id:rid,kind,payload,reviewed:true,excluded:false,created_at});response=body.p_batch;}
    else if(table==='start_quiz'){response={id:crypto.randomUUID(),scope_id:rid,scope_revision:1,snapshot:[{questionId:qid,payload:question}],created_at,completed_at:null};data.quiz_attempts.push(response);}
    else if(table==='submit_quiz'){response=data.quiz_attempts.find(a=>a.id===body.p_attempt);const a=body.p_answers[0];Object.assign(response,{score:a.choice===0?1:0,completed_at:created_at,results:[{questionId:qid,payload:question,choice:a.choice,uncertain:a.uncertain,correct:a.choice===0}]});}
+   else if(table==='delete_flashcard'){data.content_items=data.content_items.filter(i=>i.id!==body.p_id);data.card_progress=data.card_progress.filter(i=>i.item_id!==body.p_id);response=null;}
    else if(table==='set_item_excluded'){data.content_items.find(i=>i.id===body.p_id).excluded=body.p_excluded;response=null;}
    else if(table==='save_flashcard'){let deck=body.p_deck;if(!deck){deck=crypto.randomUUID();data.flashcard_decks.push({id:deck,name:'我的單字',created_at});}response=body.p_id||crypto.randomUUID();const existing=data.content_items.find(i=>i.id===response);if(existing)existing.payload=body.p_payload;else data.content_items.push({id:response,deck_id:deck,scope_id:null,kind:'flashcard',payload:body.p_payload,reviewed:true,excluded:false,created_at});}
    else if(table==='start_practice'){response={id:crypto.randomUUID(),scope_id:rid,scope_revision:1,mode:'practice',practice_filter:body.p_filter,snapshot:data.content_items.filter(i=>i.kind==='question'&&!i.excluded).slice(0,body.p_count).map(i=>({questionId:i.id,payload:i.payload})),results:[],score:0,created_at,completed_at:null};data.quiz_attempts.push(response);}
@@ -154,7 +191,7 @@ test('valid PDF uploads pass browser inspection and server validation; version n
  await page.getByLabel('上傳 PDF',{exact:true}).setInputFiles({name:'valid-chapter.pdf',mimeType:'application/pdf',buffer:bytes});
  await expect(page.getByText('教材已上傳並完成 PDF 驗證',{exact:true})).toBeVisible();
  expect(uploads).toBe(1);expect(finalized).toBe(1);await expect(page.getByRole('heading',{name:'valid-chapter.pdf'})).toBeVisible();
- await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.2.0'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
+ await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.2.1'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
  await page.getByRole('button',{name:'關閉提示',exact:true}).click();await page.screenshot({path:'test-results/versions-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.locator('aside.sidebar').evaluate(el=>el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.screenshot({path:'test-results/versions-mobile.png',fullPage:true});
 });

@@ -131,5 +131,18 @@ await asUser(b,'select public.restore_flashcards($1,$2)',['restored',JSON.string
 await asUser(b,'select public.restore_flashcards($1,$2)',['restored',JSON.stringify([{id:restoreId,payload:{...card,english:'changed',sources:[]},excluded:false,familiarity:'unknown'}])]);
 check((await asUser(b,'select * from public.content_items where id=$1',[restoreId]))[0].payload.english===card.english,'Repeated backup restores preserve existing edits');
 await reject(a,'select public.restore_flashcards($1,$2)',['foreign',JSON.stringify([{id:restoreId,payload:{...card,sources:[]}}])]);
+await db.exec(await readFile('supabase/migrations/003_delete_flashcard.sql','utf8'));
+await reject(a,'select public.delete_flashcard($1)',[standalone.id]);
+await reject(null,'select public.delete_flashcard($1)',[standalone.id]);
+await reject(a,'select public.delete_flashcard($1)',[qi.id]);
+await reject(a,'select public.delete_flashcard(null)');
+check((await asUser(b,'select * from public.content_items where id=$1',[standalone.id])).length===1,'Unauthorized deletes preserve card');
+const deckBefore=(await asUser(b,'select * from public.content_items where id=$1',[standalone.id]))[0].deck_id;
+await asUser(b,'select public.delete_flashcard($1)',[standalone.id]);
+check((await asUser(b,'select * from public.content_items where id=$1',[standalone.id])).length===0,'Owner permanently deletes excluded card');
+check((await asUser(b,'select * from public.card_progress where item_id=$1',[standalone.id])).length===0,'Delete cascades to familiarity');
+check((await asUser(b,'select * from public.flashcard_decks where id=$1',[deckBefore])).length===1,'Empty deck is retained');
+await asUser(b,'select public.delete_flashcard($1)',[standalone.id]);
+check((await asUser(a,'select * from public.quiz_attempts where id=$1',[practice.id]))[0].score===1,'Delete retry is safe and quiz history survives');
 console.log('\n'+checks+' database checks passed');
 await db.close();
