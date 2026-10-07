@@ -7,6 +7,37 @@ const sid='10000000-0000-4000-8000-000000000001',cid='10000000-0000-4000-8000-00
 const nid='10000000-0000-4000-8000-000000000005',fid='10000000-0000-4000-8000-000000000006',qid='10000000-0000-4000-8000-000000000007';
 const created_at='2026-10-07T00:00:00Z';
 const sources=[{materialId:mid,page:2}];
+for(const [width,height] of [[320,740],[390,844],[844,390],[850,900]])test(`mobile navigation remains centered and reachable at ${width}px`,async({page})=>{
+ const {data}=await mockWorkspace(page);const card=data.content_items.find(i=>i.kind==='flashcard');
+ data.content_items.push(...Array.from({length:9},(_,n)=>({...card,id:crypto.randomUUID(),payload:{...card.payload,english:`word${n}`}})));
+ data.content_items.find(i=>i.kind==='note').payload.markdown=Array.from({length:80},(_,n)=>`段落 ${n}：長篇筆記捲動測試。`).join('\n\n');
+ await page.setViewportSize({width,height});await page.goto('/');
+ const brand=page.getByRole('button',{name:'拾知，回到學習總覽'}),menu=page.getByRole('button',{name:'開啟選單'});
+ await expect(brand).toBeVisible();await expect(page.locator('.breadcrumb')).toBeHidden();await expect(page.locator('.private-label')).toBeHidden();
+ const center=await brand.evaluate(el=>{const r=el.getBoundingClientRect();return r.left+r.width/2;});expect(Math.abs(center-width/2)).toBeLessThan(1);
+ const bounds=await page.locator('.topbar').evaluate(el=>Array.from(el.children).filter(n=>n.getClientRects().length).map(n=>{const r=n.getBoundingClientRect();return {left:r.left,right:r.right};}));
+ expect(bounds[0].right).toBeLessThanOrEqual(bounds[1].left);expect(bounds[1].right).toBeLessThanOrEqual(bounds[2].left);
+ for(const tab of ['版本紀錄','概念筆記','單字卡']){
+  await menu.click();await page.getByRole('button',{name:tab,exact:true}).click();if(tab==='單字卡')await page.getByRole('button',{name:'管理單字'}).click();
+  await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight));expect(await page.evaluate(()=>window.scrollY)).toBeGreaterThan(100);
+  await expect.poll(()=>page.locator('.topbar').evaluate(el=>el.getBoundingClientRect().top)).toBe(0);
+  await menu.click();await expect(page.getByRole('button',{name:'關閉選單'})).toBeVisible();await page.getByRole('button',{name:'關閉選單'}).click();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+ }
+ await page.getByRole('button',{name:'新增單字',exact:true}).click();
+ await expect(page.getByRole('dialog')).toBeVisible();expect(await page.locator('.modal-backdrop').evaluate(el=>Number(getComputedStyle(el).zIndex))).toBeGreaterThan(await page.locator('.topbar').evaluate(el=>Number(getComputedStyle(el).zIndex)));
+ await page.getByRole('button',{name:'關閉',exact:true}).click();
+ if(width===390)await page.screenshot({path:'test-results/mobile-sticky-brand.png',fullPage:false});
+ await brand.click();await expect(page.getByRole('heading',{name:'學習總覽',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'重新同步',exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'匯出備份',exact:true})).toBeVisible();
+});
+
+test('desktop keeps original navigation layout',async({page})=>{
+ await mockWorkspace(page);await page.setViewportSize({width:1440,height:1000});await page.goto('/');
+ await expect(page.getByRole('button',{name:'拾知，回到學習總覽'})).toBeHidden();await expect(page.getByRole('button',{name:'開啟選單'})).toBeHidden();await expect(page.locator('.breadcrumb')).toBeVisible();
+ expect(await page.locator('.topbar').evaluate(el=>getComputedStyle(el).position)).toBe('static');
+});
+
 for(const count of [0,1,10,11,20,21])test(`card management paginates ${count} cards`,async({page})=>{
  const {data}=await mockWorkspace(page);const base=data.content_items.find(i=>i.kind==='flashcard');
  data.content_items=Array.from({length:count},(_,n)=>({...base,id:`20000000-0000-4000-8000-${String(n).padStart(12,'0')}`,excluded:n===0,payload:{...base.payload,english:`word${n}`}}));
@@ -191,7 +222,7 @@ test('valid PDF uploads pass browser inspection and server validation; version n
  await page.getByLabel('上傳 PDF',{exact:true}).setInputFiles({name:'valid-chapter.pdf',mimeType:'application/pdf',buffer:bytes});
  await expect(page.getByText('教材已上傳並完成 PDF 驗證',{exact:true})).toBeVisible();
  expect(uploads).toBe(1);expect(finalized).toBe(1);await expect(page.getByRole('heading',{name:'valid-chapter.pdf'})).toBeVisible();
- await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.2.1'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
+ await page.getByRole('button',{name:'版本紀錄',exact:true}).click();await expect(page.getByRole('heading',{name:'拾知 Study v1.2.2'})).toBeVisible();await expect(page.getByLabel('選擇科目')).toHaveCount(0);
  await page.getByRole('button',{name:'關閉提示',exact:true}).click();await page.screenshot({path:'test-results/versions-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.locator('aside.sidebar').evaluate(el=>el.getBoundingClientRect().right)).toBeLessThanOrEqual(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);await page.screenshot({path:'test-results/versions-mobile.png',fullPage:true});
 });

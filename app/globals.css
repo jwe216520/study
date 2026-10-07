@@ -21,3 +21,17 @@
 @media(max-width:1100px){.usage-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:600px){.usage-grid,.usage-services{grid-template-columns:1fr}.usage-summary{align-items:flex-start;flex-direction:column}.usage-summary h2{font-size:20px}.usage-card>strong{font-size:26px}.usage-links .button{width:100%;justify-content:center}}
 @media(max-width:600px){.context-bar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end}.context-bar>.field{min-width:0}.context-bar>.field:last-child{grid-column:1 / -1}.context-bar .small-add{min-width:45px}.markdown{font-size:15px}}
+
+/* Keep mobile navigation within reach without covering page content. */
+.mobile-brand{display:none}
+@media(max-width:850px){
+ .sidebar{overflow-y:auto}
+ .sidebar nav{flex-shrink:0}
+ .topbar{position:sticky;top:0;z-index:20;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px}
+ .topbar>.mobile-menu{justify-self:start}
+ .mobile-brand{display:flex;align-items:center;justify-self:center;gap:8px;padding:0;border:0;background:transparent;color:var(--green);font-size:21px;font-weight:700;letter-spacing:2px;white-space:nowrap;min-height:44px}
+ .mobile-brand .brand-mark{width:32px;height:34px;border-radius:9px}
+ .topbar .breadcrumb,.topbar .private-label,.topbar-actions .button>span{display:none}
+ .topbar-actions{justify-self:end;margin-left:0;gap:4px}
+ .topbar-actions .button{width:34px;height:34px;min-height:34px;padding:0}
+}
